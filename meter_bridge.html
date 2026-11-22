@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Meter Bridge Lab</title>
+<style>
+:root{--bg:#f4f5f7;--fg:#1d2330;--card:#fff;--bd:#c9cfdb;--ac:#1f5fd0}
+@media(prefers-color-scheme:dark){:root{--bg:#14171d;--fg:#e8ebf2;--card:#1d222b;--bd:#39404d;--ac:#6ea0ff}}
+*{box-sizing:border-box}[hidden]{display:none!important}
+body{margin:0;font:14px system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+header{padding:12px 14px;background:var(--card);border-bottom:1px solid var(--bd);font-weight:700;font-size:16px}
+main{max-width:1100px;margin:auto;padding:10px;display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.c{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px}.w2{grid-column:1/-1}
+h3{margin:0 0 6px;font-size:14px}canvas{width:100%;display:block;border-radius:6px}
+button,select,input{font:inherit;padding:7px 9px;border-radius:7px;border:1px solid var(--bd);background:var(--card);color:var(--fg)}
+button{cursor:pointer;font-weight:600;touch-action:manipulation}input[type=range]{width:100%;padding:0}input[type=text]{width:90px}
+.r{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:5px 0}.fb{min-height:36px;margin:4px 0}
+table{width:100%;border-collapse:collapse;text-align:center}td,th{border-bottom:1px solid var(--bd);padding:3px}
+#ov{position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:9;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:8px}#zc{max-height:68vh;width:auto;max-width:100%}.ok{color:#0a7a2f}.bad{color:#c22}.w{color:#b86a00}#jp,.jp{background:#1f5fd0;color:#fff;padding:10px 16px;user-select:none}
+</style></head><body>
+<header>Meter Bridge (slide-wire bridge) &mdash; find an unknown resistance X</header>
+<main>
+ <div class="c w2"><h3>Circuit <button onclick="zoom('C')">🔍 Zoom</button></h3><canvas id="cc" onclick="zoom('C')"></canvas></div>
+ <div class="c"><h3>Magnifier on the metre wire <button onclick="zoom('M')">🔍 Zoom</button></h3><canvas id="cm" onclick="zoom('M')"></canvas>
+  <div>Jockey position: slide, or use the buttons for fine control</div>
+  <input id="sl" type="range" min="0" max="100" step="0.05" value="50" oninput="S.j=+this.value;ref()">
+  <div class="r"><button onclick="bump(-5)">-5</button><button onclick="bump(-1)">-1</button><button onclick="bump(-.1)">-0.1</button><button onclick="bump(.1)">+0.1</button><button onclick="bump(1)">+1</button><button onclick="bump(5)">+5 cm</button></div>
+  <div class="r"><button id="jp" onpointerdown="S.press=1;ref()" onpointerup="S.press=0;ref()" onpointerleave="S.press=0;ref()" onpointercancel="S.press=0;ref()">&#9660; Tap jockey (hold)</button>
+   <label><input type="checkbox" onchange="S.hold=this.checked;ref()"> keep pressed</label></div></div>
+ <div class="c"><h3>Galvanometer (zero-centre) <button onclick="zoom('G')">🔍 Zoom</button></h3><canvas id="gc" onclick="zoom('G')"></canvas>
+  <div class="r"><button id="kb" onclick="S.key^=1;ref()">Key K: OPEN</button><button onclick="S.swap^=1;ref()">Interchange X &amp; R</button></div>
+  <div class="r">Resistance box R (&Omega;):
+   <select id="h" onchange="ref()"></select><select id="t" onchange="ref()"></select><select id="u" onchange="ref()"></select>= <b id="rb"></b></div>
+  <div id="st" class="w"></div></div>
+ <div class="c"><h3>Your observation</h3>
+  <div class="r">Balance length l (cm) <input id="el" type="text" inputmode="decimal"><button onclick="rec()">Check &amp; record</button></div>
+  <div id="fo" class="fb">Close the key, set R, tap the jockey and find the point of zero deflection. Read l from the magnifier.</div>
+  <table><thead><tr><th>#<th>R (&Omega;)<th>l (cm)<th>100&minus;l<th>X (&Omega;)</thead><tbody id="tb"></tbody></table><div id="mx"><b></b></div>
+  <div class="r"><button onclick="newX()">New unknown X</button><button onclick="reveal()">Reveal X</button><button onclick="S.rows=[];tab()">Clear table</button></div>
+  <small>Formula: X / R = l / (100 &minus; l) when X is in the left gap (swap the gaps and it becomes X / R = (100 &minus; l) / l). Aim for l between 40 and 60 cm.</small></div>
+</main>
+<div id="ov" hidden><canvas id="zc"></canvas><div class="r" id="zb"></div></div>
+<script>
+const $=id=>document.getElementById(id),PI=Math.PI,RHO=.05,RGAL=100,E=2,IFS=4e-4;
+const S={key:0,X:+(2+Math.random()*48).toFixed(2),swap:0,j:50,press:0,hold:0,rows:[]},G={th:0,om:0};
+for(const id of['h','t','u'])$(id).innerHTML=[...Array(10).keys()].map(k=>`<option value="${k}">${k*(id=='h'?100:id=='t'?10:1)}`).join('');
+$('u').value=5;
+const Rb=()=>+$('h').value*100+ +$('t').value*10+ +$('u').value;
+const l0=()=>{const R=Rb(),X=S.X;return 100*(S.swap?R:X)/(R+X)};
+function defl(){if(!S.key||!(S.press||S.hold))return 0;const R=Rb(),a=S.swap?R:S.X,b=S.swap?S.X:R,l=S.j,s=(a+b)||1e-9;
+ const vd=E*a/s,vj=E*l/100,rth=a*b/s+RHO*l*(100-l)/100;return(vd-vj)/(RGAL+rth)/IFS}
+const fb=(t,c)=>{$('fo').textContent=t;$('fo').className='fb '+(c||'')};
+let zk=null;
+function zdraw(){if(zk=='C')circuit($('zc'),2);else if(zk=='M')mag($('zc'),2)}
+function zoom(k){zk=k;$('ov').hidden=false;
+ $('zb').innerHTML=[-5,-1,-.1,.1,1,5].map(d=>`<button onclick="bump(${d})">${d>0?'+':''}${d} cm</button>`).join('')+
+ `<button onclick="S.key^=1;ref()">Key K</button><button class="jp" onpointerdown="S.press=1;ref()" onpointerup="S.press=0;ref()" onpointerleave="S.press=0;ref()" onpointercancel="S.press=0;ref()">\u25bc Tap jockey</button><button onclick="zk=null;$('ov').hidden=true">Close</button>`;
+ if(k=='G')gal($('zc'),2.6);else zdraw()}
+function bump(d){S.j=Math.max(0,Math.min(100,+(S.j+d).toFixed(2)));ref()}
+
+function circuit(cv=$('cc'),z=1){const c=cv.getContext('2d');cv.width=700*z;cv.height=290*z;c.scale(z,z);c.fillStyle='#fff';c.fillRect(0,0,700,290);
+ c.strokeStyle='#111';c.fillStyle='#111';c.lineWidth=2;
+ const L=(...p)=>{c.beginPath();c.moveTo(p[0],p[1]);for(let i=2;i<p.length;i+=2)c.lineTo(p[i],p[i+1]);c.stroke()};
+ const T=(t,x,y,col='#111',f='bold 11px sans-serif')=>{c.fillStyle=col;c.font=f;c.textAlign='center';c.fillText(t,x,y)};
+ const Z=(x1,x2,y)=>{c.beginPath();c.moveTo(x1,y);for(let k=1;k<12;k++)c.lineTo(x1+(x2-x1)*k/12,y+(k%2?8:-8));c.lineTo(x2,y);c.stroke()};
+ const O=(x,y,r,f)=>{c.fillStyle=f;c.beginPath();c.arc(x,y,r,0,7);c.fill();c.stroke()};
+ const px=l=>40+6.2*l,wy=180,ty=85;
+ L(40,wy,40,ty,110,ty);Z(110,250,ty);c.lineWidth=5;L(250,ty,410,ty);c.lineWidth=2;Z(410,550,ty);L(550,ty,660,ty,660,wy);
+ const lt=S.swap?'R box = '+Rb()+' \u03a9':'X (unknown)',rt=S.swap?'X (unknown)':'R box = '+Rb()+' \u03a9';
+ T(lt,180,ty-18,'#c03030');T(rt,480,ty-18,'#c03030');T('A',40,wy+34,'#555');T('B',660,wy+34,'#555');T('D',330,ty+22,'#555');
+ c.strokeStyle='#b87333';c.lineWidth=5;L(40,wy,660,wy);c.strokeStyle='#111';c.lineWidth=1;
+ for(let k=0;k<=100;k++){const h=k%10==0?12:k%5==0?8:4;L(px(k),wy+4,px(k),wy+4+h);if(k%10==0)T(k,px(k),wy+28,'#333','9px sans-serif')}
+ c.lineWidth=2;O(330,ty,3,'#111');L(330,ty,330,54);O(330,38,16,'#fff2cc');T('G',330,42);
+ const xj=px(S.j);c.strokeStyle='#d97a00';L(xj<330?314:346,38,xj,38,xj,S.press||S.hold?172:164);c.strokeStyle='#111';
+ c.fillStyle='#d97a00';c.beginPath();c.moveTo(xj,S.press||S.hold?180:172);c.lineTo(xj-6,S.press||S.hold?166:158);c.lineTo(xj+6,S.press||S.hold?166:158);c.fill();T('J',xj+14,150,'#d97a00');
+ L(40,wy,40,262,290,262);c.lineWidth=3;L(290,250,290,274);c.lineWidth=5;L(300,256,300,268);c.lineWidth=2;L(300,262,430,262);
+ O(430,262,3,'#111');O(470,262,3,'#111');S.key?L(430,262,470,262):L(430,262,466,244);L(470,262,660,262,660,wy);
+ T('E',295,248);T('K',450,244,'#c03030');T(S.key?'key closed':'key open',450,282,'#555','10px sans-serif')}
+
+function mag(cv=$('cm'),z=1){const c=cv.getContext('2d');cv.width=700*z;cv.height=150*z;c.scale(z,z);c.fillStyle='#f4f1e8';c.fillRect(0,0,700,150);
+ const lo=S.j-2.5,mx=x=>350+(x-S.j)*136;c.fillStyle='#f6e7a8';c.fillRect(0,70,700,70);c.strokeStyle='#222';c.fillStyle='#222';
+ for(let k=Math.max(0,Math.ceil(lo*10));k<=Math.min(1000,Math.floor((S.j+2.5)*10));k++){const x=mx(k/10),h=k%10==0?34:k%5==0?24:15;c.lineWidth=(k%10==0?1.6:1)/Math.pow(z,.6);
+  c.beginPath();c.moveTo(x,70);c.lineTo(x,70+h);c.stroke();if(k%10==0){c.font='bold 14px sans-serif';c.textAlign='center';c.fillText(k/10,x,70+h+15)}}
+ c.fillStyle='#b87333';c.fillRect(0,56,700,14);c.strokeStyle='#d01010';c.lineWidth=2;c.beginPath();c.moveTo(350,10);c.lineTo(350,128);c.stroke();
+ c.fillStyle='#d01010';c.font='bold 12px sans-serif';c.textAlign='center';c.fillText('\u25bc jockey',350,10)}
+
+function gal(cv=$('gc'),z=1){const c=cv.getContext('2d');cv.width=360*z;cv.height=190*z;c.scale(z,z);c.fillStyle='#f6f1e0';c.fillRect(0,0,360,190);
+ const P=(a,r)=>[180+r*Math.sin(a),175-r*Math.cos(a)],A=1.0472;c.strokeStyle='#222';c.lineWidth=1.2;c.beginPath();c.arc(180,175,140,-PI/2-A,-PI/2+A);c.stroke();
+ for(let i=-30;i<=30;i++){const a=i/30*A,l=i%10==0?16:i%5==0?11:7;c.lineWidth=(i%10==0?1.6:.8)/Math.pow(z,.6);c.strokeStyle='#222';c.beginPath();c.moveTo(...P(a,140));c.lineTo(...P(a,140-l));c.stroke();
+  if(i%10==0){c.fillStyle='#111';c.font='bold 11px sans-serif';c.textAlign='center';c.fillText(Math.abs(i),...P(a,108))}}
+ c.strokeStyle='#d01010';c.lineWidth=1.4/Math.pow(z,.6);const a=G.th*A;c.beginPath();c.moveTo(...P(a+PI,22));c.lineTo(...P(a,137));c.stroke();
+ c.fillStyle='#2a2a2a';c.beginPath();c.arc(180,175,8,0,7);c.fill();c.fillStyle='#555';c.font='10px sans-serif';c.textAlign='left';c.fillText('GALVANOMETER  \u00b130 div',8,14)}
+
+function ref(){$('kb').textContent='Key K: '+(S.key?'CLOSED':'OPEN');$('sl').value=S.j;$('rb').textContent=Rb()+' \u03a9';
+ $('st').textContent=!S.key?'Close the key.':!(S.press||S.hold)?'Tap the jockey on the wire to see the galvanometer.':'';circuit();mag();zdraw()}
+function tab(){$('tb').innerHTML=S.rows.map((r,k)=>`<tr><td>${k+1}<td>${r[0]}<td>${r[1]}<td>${(100-r[1]).toFixed(1)}<td>${r[2].toFixed(2)}</tr>`).join('');
+ $('mx').innerHTML='<b>'+(S.rows.length?'Mean X = '+(S.rows.reduce((a,r)=>a+r[2],0)/S.rows.length).toFixed(2)+' \u03a9':'')+'</b>'}
+function rec(){const l=parseFloat($('el').value),R=Rb();if(isNaN(l)||l<=0||l>=100)return fb('Enter the balance length l (0\u2013100 cm).','bad');
+ if(R<=0)return fb('Set a resistance in the box first.','w');const e=l-l0();
+ if(Math.abs(e)>.2)return fb('\u2717 That is not the null point: l is too '+(e>0?'high':'low')+'. Tap the jockey, find zero deflection, then read the jockey position from the magnifier.','bad');
+ const X=S.swap?R*(100-l)/l:R*l/(100-l);S.rows.push([R,l,X]);tab();
+ fb('\u2713 '+(Math.abs(e)<=.1?'Excellent':'Good')+' reading! X = '+X.toFixed(2)+' \u03a9.'+(l<40||l>60?' \u26a0 Best accuracy needs l between 40 and 60 cm \u2013 change R.':' Now change R and repeat, or interchange X and R.'),l<40||l>60?'w':'ok')}
+function newX(){S.X=+(2+Math.random()*48).toFixed(2);S.rows=[];S.swap=0;tab();fb('New unknown resistor fitted.');ref()}
+function reveal(){const m=S.rows.length?S.rows.reduce((a,r)=>a+r[2],0)/S.rows.length:null;
+ alert('True X = '+S.X+' \u03a9'+(m!==null?'\nYour mean X = '+m.toFixed(2)+' \u03a9 ('+(100*(m-S.X)/S.X).toFixed(1)+' % error)':'')+'\nNull point now (current R, '+(S.swap?'swapped':'normal')+'): l = '+l0().toFixed(2)+' cm')}
+function loop(){G.om+=(-144*(G.th-Math.max(-1.1,Math.min(1.1,defl())))-12*G.om)*.016;G.th+=G.om*.016;gal();if(zk=='G')gal($('zc'),2.6);requestAnimationFrame(loop)}
+window.onerror=(m,u,l)=>{const e=document.createElement('div');e.style.cssText='position:fixed;bottom:0;left:0;right:0;background:#c22;color:#fff;padding:8px;font:12px monospace';e.textContent='Error: '+m+' (line '+l+')';document.body.appendChild(e)};
+ref();tab();loop();
+</script></body></html>
